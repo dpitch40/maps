@@ -42,8 +42,5 @@ class ColorBins(object):
         else:
             return self.default
 
-def plot_points_with_magnitude(map_, points, bins, scale ,**style):
-    for lat, lon, magnitude in points:
-        size, color = bins(magnitude)
-
-        map_.plot(lon, lat, latlon=True, markersize=size * scale, c=color, **style)
+    def __repr__(self):
+        return 'ColorBins(%r, default=%r)' % (self.bins, self.default)
