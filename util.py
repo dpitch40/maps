@@ -1,7 +1,7 @@
 import re
 from operator import itemgetter
 
-point_pattern_re = re.compile(r'(\d+)[°o](\d+)[\'′](?:(\d+)["″])?([NESW])')
+point_pattern_re = re.compile(r'(\d+)[°o](\d+(?:\.\d+)?)[\'′](?:(\d+(?:\.\d+)?)["″])?([NESW])')
 
 def parse_latlon(s):
     try:
@@ -42,8 +42,8 @@ class ColorBins(object):
         else:
             return self.default
 
-def plot_points_with_magnitude(map_, points, bins, **style):
+def plot_points_with_magnitude(map_, points, bins, scale ,**style):
     for lat, lon, magnitude in points:
         size, color = bins(magnitude)
 
-        map_.plot(lon, lat, latlon=True, markersize=size, c=color, **style)
+        map_.plot(lon, lat, latlon=True, markersize=size * scale, c=color, **style)

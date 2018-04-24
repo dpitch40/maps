@@ -34,8 +34,20 @@ def scrape_url(url):
 
 def scrape_coordinates(urlfile):
     urls = open(urlfile, 'r').read().split('\n')
+    url_map = {}
     for url in urls:
-        yield url, scrape_url(url)
+        if url in url_map:
+            yield url, url_map[url]
+        else:
+            loc = url_map[url] = scrape_url(url)
+            yield url, loc
+
+def format_coords(coordinates):
+    if coordinates:
+        lat, lon = coordinates
+        return '%s\t%s' % (lat, lon)
+    else:
+        return coordinates
 
 def main():
     parser = argparse.ArgumentParser()
@@ -46,13 +58,9 @@ def main():
 
     if os.path.exists(args.urlfile):
         for url, coordinates in scrape_coordinates(args.urlfile):
-            if coordinates:
-                lat, lon = coordinates
-                print('%s\t%s' % (lat, lon))
-            else:
-                print(coordinates)
+            print(format_coords(coordinates))
     else:
-        print(scrape_url(args.urlfile))
+        print(format_coords(scrape_url(args.urlfile)))
 
 if __name__ == "__main__":
     main()
