@@ -63,7 +63,7 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd
     df.set_index('Country Code', inplace=True)
     df = df.ix[iso3_codes].dropna() # Filter out non-countries and missing values.
 
-    values = df[df.columns[1]]
+    values = df[df['Magnitude']]
     # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
     cm = plt.get_cmap(colorscale)
     scheme = [cm(i / num_colors) for i in range(num_colors)]
@@ -94,23 +94,46 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd
 
     plt.savefig(dest, bbox_inches='tight')
 
-def main():
+def plot_us_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd',
+                        scale=1, projection='ortho', resolution='l'):
 
-    parser = argparse.ArgumentParser()
+    shapefile = 'cb_2017_us_county_500k/cb_2017_us_county_500k'
+    num_colors = len(bins) - 1
 
-    parser.add_argument('map_type', choices=['prop_symbol', 'chloropleth'])
-    parser.add_argument('datafile')
-    parser.add_argument('-o', '--dest', default='map.png')
-    parser.add_argument('--style', nargs=2, action='append', default=[])
-    parser.add_argument('--scale', type=int, default=1)
-    parser.add_argument('-p', '--proj', default='robin')
-    parser.add_argument('-r', '--resolution', default='l')
-    parser.add_argument('-d', '--descending', action='store_true')
+    gc = GeonamesCache()
+    # iso3_codes = list(gc.get_dataset_by_key(gc.get_countries(), 'iso3').keys())
 
-    args = parser.parse_args()
+    df = pd.read_csv(datafile)
+    df.set_index('Geoid', inplace=True)
+    # df = df.ix[iso3_codes].dropna() # Filter out non-countries and missing values.
 
-    plot_map(args.map_type, args.datafile, args.dest, args.style, args.scale, args.proj, args.resolution,
-                    args.descending)
+    values = df['Magnitude']
+    # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
+    cm = plt.get_cmap(colorscale)
+    scheme = [cm(i / num_colors) for i in range(num_colors)]
+    df['bin'] = np.digitize(values, bins) - 1
+    df.sort_values('bin', ascending=False).head(10)
 
-if __name__ == "__main__":
-    main()
+    # This doesn't work, is it important?
+    # mpl.style.use('map')
+    fig = plt.figure(figsize=(default_size * scale, default_size * scale))
+
+    ax = fig.add_subplot(111, facecolor='w', frame_on=False)
+
+    m = Basemap(lon_0=-98.5795, lat_0=39.828, projection=projection, resolution=resolution)
+    m.drawmapboundary(linewidth=default_map_linewidth * scale, color='w')
+
+    m.readshapefile(shapefile, 'units', color='#444444', linewidth=default_border_linewidth * scale)
+    for info, shape in zip(m.units_info, m.units):
+        geoid = info['GEOID']
+        if geoid not in df.index:
+            color = blankcolor
+        else:
+            color = scheme[df.ix[geoid]['bin']]
+
+        patches = [Polygon(np.array(shape), True)]
+        pc = PatchCollection(patches)
+        pc.set_facecolor(color)
+        ax.add_collection(pc)
+
+    plt.savefig(dest, bbox_inches='tight')
