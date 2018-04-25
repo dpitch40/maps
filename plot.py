@@ -7,6 +7,7 @@ import matplotlib as mpl
 from mpl_toolkits.basemap import Basemap
 # https://matplotlib.org/basemap/index.html
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gs
 import numpy as np
 import pandas as pd
 
@@ -48,7 +49,7 @@ def plot_prop_symbols(datafile, dest, bins, custom_style={}, scale=1,
 
     plt.savefig(dest, bbox_inches='tight')
 
-def plot_world_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd',
+def plot_world_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
                            scale=1, projection='robin', resolution='l'):
     """Format: CSV with 'Country Name', 'Country Code', and 'Magnitude' columns."""
 
@@ -61,9 +62,9 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd
 
     df = pd.read_csv(datafile)
     df.set_index('Country Code', inplace=True)
-    df = df.ix[iso3_codes].dropna() # Filter out non-countries and missing values.
+    df = df.loc[iso3_codes].dropna() # Filter out non-countries and missing values.
 
-    values = df[df['Magnitude']]
+    values = df['Magnitude']
     # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
     cm = plt.get_cmap(colorscale)
     scheme = [cm(i / num_colors) for i in range(num_colors)]
@@ -83,9 +84,9 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd
     for info, shape in zip(m.units_info, m.units):
         iso3 = info['ADM0_A3']
         if iso3 not in df.index:
-            color = blankcolor
+            color = nodatacolor
         else:
-            color = scheme[df.ix[iso3]['bin']]
+            color = scheme[df.loc[iso3]['bin']]
 
         patches = [Polygon(np.array(shape), True)]
         pc = PatchCollection(patches)
@@ -94,8 +95,9 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd
 
     plt.savefig(dest, bbox_inches='tight')
 
-def plot_us_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd',
+def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
                         scale=1, projection='ortho', resolution='l'):
+    """Format: CSV with 'County Name', 'Geoid', and 'Magnitude' columns."""
 
     shapefile = 'cb_2017_us_county_500k/cb_2017_us_county_500k'
     num_colors = len(bins) - 1
@@ -105,7 +107,7 @@ def plot_us_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd',
 
     df = pd.read_csv(datafile)
     df.set_index('Geoid', inplace=True)
-    # df = df.ix[iso3_codes].dropna() # Filter out non-countries and missing values.
+    # df = df.loc[iso3_codes].dropna() # Filter out non-countries and missing values.
 
     values = df['Magnitude']
     # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
@@ -117,23 +119,34 @@ def plot_us_chloropleth(datafile, dest, colorscale, bins, blankcolor='#dddddd',
     # This doesn't work, is it important?
     # mpl.style.use('map')
     fig = plt.figure(figsize=(default_size * scale, default_size * scale))
+    grid = gs.GridSpec(nrows=10, ncols=10)
 
-    ax = fig.add_subplot(111, facecolor='w', frame_on=False)
+    for lon_0, lat_0, gridpos, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat in \
+        [(-98.5795, 39.828, grid[:-2, :], -121, 22, -64, 47), # Contiguous US
+         (-160, 63.5, grid[-4:, :6], -185.3, 49, -116, 65.5), # Alaska
+         (-158, 21, grid[-3:, 6:], -161, 18, -154, 23)]: # Hawaii
 
-    m = Basemap(lon_0=-98.5795, lat_0=39.828, projection=projection, resolution=resolution)
-    m.drawmapboundary(linewidth=default_map_linewidth * scale, color='w')
+        m = Basemap(lon_0=lon_0, lat_0=lat_0, projection=projection, resolution=resolution)
+        ax = fig.add_subplot(gridpos, facecolor='#00000000', frame_on=False)
 
-    m.readshapefile(shapefile, 'units', color='#444444', linewidth=default_border_linewidth * scale)
-    for info, shape in zip(m.units_info, m.units):
-        geoid = info['GEOID']
-        if geoid not in df.index:
-            color = blankcolor
-        else:
-            color = scheme[df.ix[geoid]['bin']]
+        m.readshapefile(shapefile, 'units', color='#444444', linewidth=default_border_linewidth * scale)
+        for info, shape in zip(m.units_info, m.units):
+            geoid = int(info['GEOID'])
+            if geoid not in df.index:
+                color = nodatacolor
+            else:
+                color = scheme[df.loc[geoid]['bin']]
 
-        patches = [Polygon(np.array(shape), True)]
-        pc = PatchCollection(patches)
-        pc.set_facecolor(color)
-        ax.add_collection(pc)
+            patches = [Polygon(np.array(shape), True)]
+            pc = PatchCollection(patches)
+            pc.set_facecolor(color)
+            ax.add_collection(pc)
+
+        xmin, ymin = m(llcrnrlon, llcrnrlat)
+        xmax, ymax = m(urcrnrlon, urcrnrlat)
+
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+
 
     plt.savefig(dest, bbox_inches='tight')

@@ -8,4 +8,4 @@ bins = util.ColorBins({30000: (5, 'blue'),
                        80000: (13, 'orange'),
                        100000: (15, 'red')}, (3, 'purple'))
 
-plot.plot_prop_symbols('all_tunnels.csv', 'tunnels.png', bins)
+plot.plot_prop_symbols('data/all_tunnels.csv', 'tunnels.png', bins)

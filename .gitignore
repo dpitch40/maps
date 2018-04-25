@@ -1,5 +1,8 @@
 *.csv
 __pycache__/
 *.png
-data/
 *.pyc
+
+data/
+cb_2017_us_county_500k/
+ne_10m_admin_0_countries_lakes/
