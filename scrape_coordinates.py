@@ -1,6 +1,7 @@
 import re
 import argparse
 from urllib.request import urlopen
+from urllib.error import HTTPError
 import time
 import os.path
 
@@ -16,21 +17,24 @@ def scrape_url(url):
         if m:
             return m.groups()
 
-    with urlopen(url) as fobj:
-        time.sleep(1)
-        soup = BeautifulSoup(fobj, 'lxml')
-        coords_span = soup.find('span', id='coordinates')
-        if coords_span is None:
-            return None
+    try:
+        with urlopen(url) as fobj:
+            time.sleep(1)
+            soup = BeautifulSoup(fobj, 'lxml')
+            coords_span = soup.find('span', id='coordinates')
+            if coords_span is None:
+                return None
 
-        lat = coords_span.find('span', class_='latitude')
-        if lat:
-            lat = lat.string
-        lon = coords_span.find('span', class_='longitude')
-        if lon:
-            lon = lon.string
+            lat = coords_span.find('span', class_='latitude')
+            if lat:
+                lat = lat.string
+            lon = coords_span.find('span', class_='longitude')
+            if lon:
+                lon = lon.string
 
-        return lat, lon
+            return lat, lon
+    except HTTPError:
+        return None
 
 def scrape_coordinates(urlfile):
     urls = open(urlfile, 'r').read().split('\n')
@@ -47,7 +51,7 @@ def format_coords(coordinates):
         lat, lon = coordinates
         return '%s\t%s' % (lat, lon)
     else:
-        return coordinates
+        return ''
 
 def main():
     parser = argparse.ArgumentParser()

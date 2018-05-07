@@ -1,7 +1,7 @@
 import re
 import argparse
-import csv
 from operator import itemgetter
+from collections import defaultdict
 
 import matplotlib as mpl
 from mpl_toolkits.basemap import Basemap
@@ -21,8 +21,14 @@ default_size = 40
 default_map_linewidth = 0.4
 default_border_linewidth = 0.3
 
+equivalencies = {2158: 2270, # Wade Hampton Census Area = Kusilvak Census Area, AK
+                 46102: 46113, # Oglala Lakota County = Shannon County, SD
+                }
+equivalencies.update(dict([(v, k) for k, v in equivalencies.items()]))
+
 def plot_prop_symbols(datafile, dest, bins, custom_style={}, scale=1,
-                      projection='robin', resolution='l', descending=False):
+                      projection='robin', resolution='l', descending=False, usecol='Magnitude',
+                      inputkwargs={}):
     """Format: CSV with 'Latitude', 'Longitude', and 'Magnitude' columns."""
 
     default_style = {'linestyle': 'none',
@@ -40,17 +46,26 @@ def plot_prop_symbols(datafile, dest, bins, custom_style={}, scale=1,
     m.drawcountries(linewidth=default_border_linewidth * scale, color='black')
 
     df = pd.read_csv(datafile, converters={'Latitude': util.parse_latlon,
-                                           'Longitude': util.parse_latlon})
+                                           'Longitude': util.parse_latlon},
+                     usecols=['Latitude', 'Longitude', usecol], **inputkwargs)
+    magnitudes = defaultdict(int)
 
-    for f in df.sort_values(by=['Magnitude'], ascending=not descending).itertuples():
-        size, color = bins(f.Magnitude)
+    for f in df.itertuples():
+        magnitude = getattr(f, usecol)
+        if pd.notna(magnitude):
+            magnitudes[(f.Latitude, f.Longitude)] += magnitude
 
-        m.plot(f.Longitude, f.Latitude, latlon=True, markersize=size * scale, c=color, **style)
+    for (latitude, longitude), magnitude in sorted(magnitudes.items(), key=itemgetter(1),
+                                                   reverse=descending):
+            size, color = bins(magnitude)
+
+            m.plot(longitude, latitude, latlon=True, markersize=size * scale, c=color, **style)
 
     plt.savefig(dest, bbox_inches='tight')
 
 def plot_world_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
-                           scale=1, projection='robin', resolution='l'):
+                           scale=1, projection='robin', resolution='l', usecol='Magnitude',
+                           inputkwargs={}):
     """Format: CSV with 'Country Name', 'Country Code', and 'Magnitude' columns."""
 
     # See http://ramiro.org/notebook/basemap-choropleth/
@@ -60,11 +75,11 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#ddddd
     gc = GeonamesCache()
     iso3_codes = list(gc.get_dataset_by_key(gc.get_countries(), 'iso3').keys())
 
-    df = pd.read_csv(datafile)
+    df = pd.read_csv(datafile, **inputkwargs)
     df.set_index('Country Code', inplace=True)
     df = df.loc[iso3_codes].dropna() # Filter out non-countries and missing values.
 
-    values = df['Magnitude']
+    values = df[usecol]
     # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
     cm = plt.get_cmap(colorscale)
     scheme = [cm(i / num_colors) for i in range(num_colors)]
@@ -96,8 +111,9 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#ddddd
     plt.savefig(dest, bbox_inches='tight')
 
 def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
-                        scale=1, projection='ortho', resolution='l'):
-    """Format: CSV with 'County Name', 'Geoid', and 'Magnitude' columns."""
+                        scale=1, projection='ortho', resolution='l', usecol='Magnitude',
+                        inputkwargs={}):
+    """Format: CSV with 'Geography', 'Geoid', and 'Magnitude' columns."""
 
     shapefile = 'cb_2017_us_county_500k/cb_2017_us_county_500k'
     num_colors = len(bins) - 1
@@ -105,11 +121,11 @@ def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
     gc = GeonamesCache()
     # iso3_codes = list(gc.get_dataset_by_key(gc.get_countries(), 'iso3').keys())
 
-    df = pd.read_csv(datafile)
+    df = pd.read_csv(datafile, **inputkwargs)
     df.set_index('Geoid', inplace=True)
     # df = df.loc[iso3_codes].dropna() # Filter out non-countries and missing values.
 
-    values = df['Magnitude']
+    values = df[usecol]
     # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
     cm = plt.get_cmap(colorscale)
     scheme = [cm(i / num_colors) for i in range(num_colors)]
@@ -132,6 +148,9 @@ def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
         m.readshapefile(shapefile, 'units', color='#444444', linewidth=default_border_linewidth * scale)
         for info, shape in zip(m.units_info, m.units):
             geoid = int(info['GEOID'])
+            if geoid in equivalencies and geoid not in df.index:
+                geoid = equivalencies[geoid]
+
             if geoid not in df.index:
                 color = nodatacolor
             else:

@@ -1,7 +1,7 @@
 import re
 from operator import itemgetter
 
-point_pattern_re = re.compile(r'(\d+)[°o](\d+(?:\.\d+)?)[\'′](?:(\d+(?:\.\d+)?)["″])?([NESW])')
+point_pattern_re = re.compile(r'(\d+)[°o]\s?(\d+(?:\.\d+)?)[\'′’]\s?(?:(\d+(?:\.\d+)?)["″”])?\s?([NESW])')
 
 def parse_latlon(s):
     try:
