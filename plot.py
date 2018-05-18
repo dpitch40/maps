@@ -111,7 +111,7 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#ddddd
     plt.savefig(dest, bbox_inches='tight')
 
 def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
-                        scale=1, projection='ortho', resolution='l', usecol='Magnitude',
+                        scale=1, resolution='l', usecol='Magnitude',
                         inputkwargs={}):
     """Format: CSV with 'Geography', 'Geoid', and 'Magnitude' columns."""
 
@@ -142,7 +142,7 @@ def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
          (-160, 63.5, grid[-4:, :6], -185.3, 49, -116, 65.5), # Alaska
          (-158, 21, grid[-3:, 6:], -161, 18, -154, 23)]: # Hawaii
 
-        m = Basemap(lon_0=lon_0, lat_0=lat_0, projection=projection, resolution=resolution)
+        m = Basemap(lon_0=lon_0, lat_0=lat_0, projection='ortho', resolution=resolution)
         ax = fig.add_subplot(gridpos, facecolor='#00000000', frame_on=False)
 
         m.readshapefile(shapefile, 'units', color='#444444', linewidth=default_border_linewidth * scale)
@@ -167,5 +167,60 @@ def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
         ax.set_xlim(xmin, xmax)
         ax.set_ylim(ymin, ymax)
 
+
+    plt.savefig(dest, bbox_inches='tight')
+
+def plot_us_state_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
+                              scale=1, resolution='l', usecol='Magnitude',
+                              inputkwargs={}):
+    """Format: CSV with 'Geography', 'AFFGEOID', and 'Magnitude' columns."""
+
+    shapefile = 'cb_2017_us_state_500k/cb_2017_us_state_500k'
+    num_colors = len(bins) - 1
+
+    gc = GeonamesCache()
+
+    df = pd.read_csv(datafile, **inputkwargs)
+    df.set_index('AFFGEOID', inplace=True)
+
+    values = df[usecol]
+    # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
+    cm = plt.get_cmap(colorscale)
+    scheme = [cm(i / num_colors) for i in range(num_colors)]
+    df['bin'] = np.digitize(values, bins) - 1
+    df.sort_values('bin', ascending=False).head(10)
+
+    fig = plt.figure(figsize=(default_size * scale, default_size * scale))
+    grid = gs.GridSpec(nrows=10, ncols=10)
+
+    for lon_0, lat_0, gridpos, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat in \
+        [(-98.5795, 39.828, grid[:-2, :], -121, 22, -64, 47), # Contiguous US
+         (-160, 63.5, grid[-4:, :6], -185.3, 49, -116, 65.5), # Alaska
+         (-158, 21, grid[-3:, 6:], -161, 18, -154, 23)]: # Hawaii
+
+        m = Basemap(lon_0=lon_0, lat_0=lat_0, projection='ortho', resolution=resolution)
+        ax = fig.add_subplot(gridpos, facecolor='#00000000', frame_on=False)
+
+        m.readshapefile(shapefile, 'units', color='#444444', linewidth=default_border_linewidth * scale)
+        for info, shape in zip(m.units_info, m.units):
+            geoid = info['AFFGEOID']
+            if geoid in equivalencies and geoid not in df.index:
+                geoid = equivalencies[geoid]
+
+            if geoid not in df.index:
+                color = nodatacolor
+            else:
+                color = scheme[df.loc[geoid]['bin']]
+
+            patches = [Polygon(np.array(shape), True)]
+            pc = PatchCollection(patches)
+            pc.set_facecolor(color)
+            ax.add_collection(pc)
+
+        xmin, ymin = m(llcrnrlon, llcrnrlat)
+        xmax, ymax = m(urcrnrlon, urcrnrlat)
+
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
 
     plt.savefig(dest, bbox_inches='tight')

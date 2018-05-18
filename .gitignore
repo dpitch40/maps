@@ -5,4 +5,5 @@ __pycache__/
 scripts/
 data/
 cb_2017_us_county_500k/
+cb_2017_us_state_500k/
 ne_10m_admin_0_countries_lakes/
