@@ -26,6 +26,34 @@ equivalencies = {2158: 2270, # Wade Hampton Census Area = Kusilvak Census Area, 
                 }
 equivalencies.update(dict([(v, k) for k, v in equivalencies.items()]))
 
+def plot_dots(datafile, dest, size=6, color='red', scale=1,
+              projection='robin', resolution='l', descending=False, inputkwargs={}):
+    """Format: CSV with 'Latitude' and 'Longitude' columns."""
+
+    style = {'linestyle': 'none',
+             'marker': 'o',
+             'markeredgecolor': 'black',
+             'markeredgewidth': 0.3 * scale}
+
+    plt.figure(figsize=(default_size * scale, default_size * scale))
+    m = Basemap(projection=projection, lon_0=0, resolution=resolution)
+    m.drawmapboundary(linewidth=default_map_linewidth * scale)
+    m.drawcoastlines(linewidth=default_map_linewidth * scale, color='black')
+    m.drawcountries(linewidth=default_border_linewidth * scale, color='black')
+
+    df = pd.read_csv(datafile, converters={'Latitude': util.parse_latlon,
+                                           'Longitude': util.parse_latlon},
+                     usecols=['Latitude', 'Longitude'], **inputkwargs)
+    coords = []
+
+    for f in df.itertuples():
+        coords.append((f.Latitude, f.Longitude))
+
+    for latitude, longitude in coords:
+        m.plot(longitude, latitude, latlon=True, markersize=size * scale, c=color, **style)
+
+    plt.savefig(dest, bbox_inches='tight')
+
 def plot_prop_symbols(datafile, dest, bins, custom_style={}, scale=1,
                       projection='robin', resolution='l', descending=False, usecol='Magnitude',
                       inputkwargs={}):
@@ -77,12 +105,13 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#ddddd
 
     df = pd.read_csv(datafile, **inputkwargs)
     df.set_index('Country Code', inplace=True)
-    df = df.loc[iso3_codes].dropna() # Filter out non-countries and missing values.
+    df = df.reindex(iso3_codes)#.dropna() # Filter out non-countries and missing values.
 
     values = df[usecol]
     # https://matplotlib.org/api/pyplot_summary.html#matplotlib.pyplot.colormaps
     cm = plt.get_cmap(colorscale)
     scheme = [cm(i / num_colors) for i in range(num_colors)]
+    scheme.append(nodatacolor)
     df['bin'] = np.digitize(values, bins) - 1
     df.sort_values('bin', ascending=False).head(10)
 
