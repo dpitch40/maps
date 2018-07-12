@@ -2,6 +2,7 @@ import re
 import argparse
 from operator import itemgetter
 from collections import defaultdict
+import csv
 
 import matplotlib as mpl
 from mpl_toolkits.basemap import Basemap
@@ -25,6 +26,8 @@ equivalencies = {2158: 2270, # Wade Hampton Census Area = Kusilvak Census Area, 
                  46102: 46113, # Oglala Lakota County = Shannon County, SD
                 }
 equivalencies.update(dict([(v, k) for k, v in equivalencies.items()]))
+
+geography_parse_re = re.compile(r'^(.+?)(?: (city|borough|city and borough|census area|parish|county|municipality))?, (.+)$', re.I)
 
 def plot_dots(datafile, dest, size=6, color='red', scale=1,
               projection='robin', resolution='l', descending=False, inputkwargs={}):
@@ -142,6 +145,42 @@ def plot_world_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#ddddd
 
     plt.savefig(dest, bbox_inches='tight')
 
+def parse_geography(geography):
+    m = geography_parse_re.match(geography)
+    if not m:
+        raise ValueError('Could not parse geography: %r' % geography)
+    county, suffix, state = m.groups()
+    state = state.lower()
+    county = county.lower().replace(' ', '')
+    if suffix:
+        suffix = suffix.lower()
+
+    return state, county, suffix
+
+class GeoidLookup(object):
+    def __init__(self):
+        self.geoid_mapping = None
+
+    @property
+    def geoids(self):
+        if self.geoid_mapping is None:
+            mapping = {}
+            with open('data/Census.csv', 'r') as fobj:
+                reader = csv.DictReader(fobj)
+                for row in reader:
+                    geography = row['Geography']
+                    state, county, suffix = parse_geography(geography)
+                    geoid = int(row['Geoid'])
+                    if suffix and (state, county) in mapping:
+                        mapping[(state, '%s%s' % (county, suffix))] = geoid
+                    else:
+                        mapping[(state, county)] = geoid
+            self.geoid_mapping = mapping
+
+        return self.geoid_mapping
+
+lookup = GeoidLookup()
+
 def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
                         scale=1, resolution='l', usecol='Magnitude',
                         inputkwargs={}):
@@ -154,6 +193,22 @@ def plot_us_chloropleth(datafile, dest, colorscale, bins, nodatacolor='#dddddd',
     # iso3_codes = list(gc.get_dataset_by_key(gc.get_countries(), 'iso3').keys())
 
     df = pd.read_csv(datafile, **inputkwargs)
+    geoid_lookup = lookup.geoids
+    if 'Geoid' not in df:
+        geoids = np.empty(df.shape[0], dtype=np.uint32)
+        for index, row in df.iterrows():
+            if "Geography" in row:
+                geography = row['Geography']
+            else:
+                state = row['State']
+                county = row['County']
+                geography = '%s, %s' % (county, state)
+            state, county, suffix = parse_geography(geography)
+            if suffix and (state, '%s%s' % (county, suffix)) in geoid_lookup:
+                geoids[index] = geoid_lookup[(state, '%s%s' % (county, suffix))]
+            else:
+                geoids[index] = geoid_lookup[(state, county)]
+        df.insert(0, 'Geoid', geoids)
     df.set_index('Geoid', inplace=True)
     # df = df.loc[iso3_codes].dropna() # Filter out non-countries and missing values.
 
