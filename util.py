@@ -17,7 +17,8 @@ def parse_latlon(s):
         else:
             m = point_pattern_re.match(s)
             if m is None:
-                raise ValueError('Could not parse latitude/longitude: %r' % s)
+                return None
+                # raise ValueError('Could not parse latitude/longitude: %r' % s)
 
             degs, mins, secs, polarity =  m.groups()
             if secs:

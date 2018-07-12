@@ -54,7 +54,7 @@ def plot_dots(datafile, dest, size=6, color='red', scale=1,
 
     plt.savefig(dest, bbox_inches='tight')
 
-def plot_prop_symbols(datafile, dest, bins, custom_style={}, scale=1,
+def plot_prop_symbols(datafile, dest, bins, custom_style={}, scale=1, sumatsamecoords=False,
                       projection='robin', resolution='l', descending=False, usecol='Magnitude',
                       inputkwargs={}):
     """Format: CSV with 'Latitude', 'Longitude', and 'Magnitude' columns."""
@@ -76,12 +76,15 @@ def plot_prop_symbols(datafile, dest, bins, custom_style={}, scale=1,
     df = pd.read_csv(datafile, converters={'Latitude': util.parse_latlon,
                                            'Longitude': util.parse_latlon},
                      usecols=['Latitude', 'Longitude', usecol], **inputkwargs)
-    magnitudes = defaultdict(int)
 
+    magnitudes = defaultdict(int)
     for f in df.itertuples():
         magnitude = getattr(f, usecol)
         if pd.notna(magnitude):
-            magnitudes[(f.Latitude, f.Longitude)] += magnitude
+            if sumatsamecoords:
+                magnitudes[(f.Latitude, f.Longitude)] += magnitude
+            else:
+                magnitudes[(f.Latitude, f.Longitude)] = magnitude
 
     for (latitude, longitude), magnitude in sorted(magnitudes.items(), key=itemgetter(1),
                                                    reverse=descending):

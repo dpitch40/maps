@@ -30,23 +30,32 @@ def scrape_url(url):
 
     raise ValueError('No rules defined for scraping the URL %s' % url)
 
-def scrape_wikipedia_url(url):
+def scrape_wikipedia_element(soup, path=None):
+    if path is None:
+        path = [('span', {'id': 'coordinates'})]
+
+    for name, kwargs in path:
+        soup = soup.find(name, **kwargs)
+        if soup is None:
+            return None
+
+    lat = soup.find('span', class_='latitude')
+    if lat:
+        lat = lat.string
+    lon = soup.find('span', class_='longitude')
+    if lon:
+        lon = lon.string
+
+    return lat, lon
+
+def scrape_wikipedia_url(url, path=None):
     try:
         with urlopen(url) as fobj:
             time.sleep(1)
             soup = BeautifulSoup(fobj, 'lxml')
-            coords_span = soup.find('span', id='coordinates')
-            if coords_span is None:
-                return None
 
-            lat = coords_span.find('span', class_='latitude')
-            if lat:
-                lat = lat.string
-            lon = coords_span.find('span', class_='longitude')
-            if lon:
-                lon = lon.string
+            return scrape_wikipedia_element(soup, path)
 
-            return lat, lon
     except HTTPError as ex:
         return None
 
@@ -61,7 +70,7 @@ def parse_table_headers(table):
             for header in row.find_all('th'):
                 colspan = header.attrs.get('colspan', 1)
                 rowspan = header.attrs.get('rowspan', 1)
-                cur_header_info.append((next(header.stripped_strings), int(colspan), int(rowspan)))
+                cur_header_info.append((' '.join(header.stripped_strings), int(colspan), int(rowspan)))
         else:
             break
         header_info.append(cur_header_info)
@@ -71,8 +80,10 @@ def parse_table_headers(table):
     num_cols = max(sum(map(operator.itemgetter(1), r)) for r in header_info)
 
     header_lists = [[] for i in range(num_cols)]
-    for info in header_info:
+    for rownum, info in enumerate(header_info):
         cur_col = 0
+        while len(header_lists[cur_col]) > rownum:
+            cur_col += 1
         for header, colspan, rowspan in info:
             for col in range(cur_col, cur_col + colspan):
                 header_lists[col].append(header)
@@ -86,12 +97,17 @@ def parse_table_headers(table):
 
     return headers, row
 
-def location_from_column(col):
-    location_link = col.find('a')
+def location_from_column(col, path=None):
+
     url = ''
+    coords = scrape_wikipedia_element(col, path)
+    if coords:
+        return coords + (url,)
+
+    location_link = col.find('a')
     if location_link:
         url = expand_wikipedia_url(location_link.attrs['href'])
-        coords = scrape_wikipedia_url(url)
+        coords = scrape_wikipedia_url(url, path)
         if coords:
             lat, lon = coords
         else:
@@ -101,13 +117,17 @@ def location_from_column(col):
 
     return lat, lon, url
 
-def scrape_wikipedia_table_url(url, table_index, preview, magnitude_column, location_column,
-                               name_column, limit, backup_location_column, out):
+def scrape_wikipedia_table_url(url, table_index=0, preview=False, row_filter=None, limit=0, path=None,
+
+                               magnitude_column=None, location_column=None, name_column=None,
+                               backup_location_column=None,
+
+                               out=None, write_headers=True, out_transform=None):
 
     with urlopen(url) as fobj:
         soup = BeautifulSoup(fobj, 'lxml')
 
-        tables = soup.find_all('table')
+        tables = soup.find_all('table', class_='sortable')
         table = tables[table_index]
 
         headers, first_data_row = parse_table_headers(table)
@@ -115,6 +135,8 @@ def scrape_wikipedia_table_url(url, table_index, preview, magnitude_column, loca
         if preview:
             print(headers)
             raise SystemExit
+
+        num_cols = len(first_data_row.find_all(['th', 'td']))
 
         if not magnitude_column:
             raise ValueError('Must specify magnitude_column')
@@ -133,42 +155,56 @@ def scrape_wikipedia_table_url(url, table_index, preview, magnitude_column, loca
         if backup_location_column:
             backup_loc_index = headers.index(backup_location_column)
 
+        out_headers = ['Name', 'Magnitude', 'Latitude', 'Longitude', 'Loc_url', 'Loc_url2']
         if out:
-            fobj = open(out, 'w')
-            writer = csv.writer(fobj, delimiter='\t' if out.lower().endswith('.tsv') else ',')
+            if isinstance(out, str):
+                fobj = open(out, 'w')
+                writer = csv.DictWriter(fobj, delimiter='\t' if out.lower().endswith('.tsv') else ',',
+                                        fieldnames=out_headers)
+            else:
+                fobj = out
+                writer = csv.DictWriter(fobj, delimiter=',', fieldnames=out_headers)
             writerow = writer.writerow
         else:
-            writerow = lambda row: print('\t'.join(row))
+            writerow = lambda row: print('\t'.join([row[h] for h in out_headers]))
 
-        writerow(['Name', 'Magnitude', 'Latitude', 'Longitude', 'Loc_url', 'Loc_url2'])
+        if write_headers:
+            writerow()
         for i, row in enumerate(itertools.chain([first_data_row], first_data_row.find_next_siblings('tr'))):
             cols = row.find_all(['th', 'td'])
+            if len(cols) < num_cols:
+                continue
+            if row_filter and not row_filter(cols):
+                continue
+            if limit and i >= limit:
+                break
+
             if name_column:
                 name = ' '.join(cols[name_index].stripped_strings)
             else:
                 name = ''
-            magnitude = next(cols[mag_index].stripped_strings)
-            lat, lon, loc_url = location_from_column(cols[loc_index])
+
+            mag_col = cols[mag_index]
+            mag_el = mag_col.find('span', class_='sorttext')
+            if not mag_el:
+                mag_el = mag_col
+            magnitude = next(mag_el.stripped_strings)
+
+            lat, lon, loc_url = location_from_column(cols[loc_index], path=path)
             loc_url2 = ''
-            if not lat and backup_location_column:
-                lat, lon, loc_url2 = location_from_column(cols[backup_loc_index])
-            else:
-                lat, lon, loc_url2 = '', '', ''
-
-            location_link = cols[loc_index].find('a')
-            if location_link:
-                coords = scrape_wikipedia_url(expand_wikipedia_url(location_link.attrs['href']))
-                if coords:
-                    lat, lon = coords
+            if not lat or not lon:
+                if backup_location_column:
+                    lat, lon, loc_url2 = location_from_column(cols[backup_loc_index], path=path)
                 else:
-                    lat, lon = '', ''
-            else:
-                lat, lon = '', ''
-            writerow([name, magnitude, lat, lon, loc_url, loc_url2])
-            if limit and i >= limit - 1:
-                break
+                    lat, lon, loc_url2 = '', '', ''
 
-        if out:
+            out_row = {'Name': name, 'Magnitude': magnitude, 'Latitude': lat,
+                       'Longitude': lon, 'Loc_url': loc_url, 'Loc_url2': loc_url2}
+            if out_transform:
+                out_row = out_transform(out_row)
+            writerow(out_row)
+
+        if out and isinstance(out, str):
             fobj.close()
 
     return []
@@ -210,10 +246,13 @@ def main():
     m = wikipedia_url_re.match(url)
     if m:
         try:
-            scrape_wikipedia_table_url(url, args.table_index, args.preview,
-                            args.magnitude_column, args.location_column,
-                            args.name_column, args.limit, args.backup_location_column, args.out)
+            scrape_wikipedia_table_url(url, args.table_index, preview=args.preview,
+                            magnitude_column=args.magnitude_column, location_column=args.location_column,
+                            name_column=args.name_column, backup_location_column=args.backup_location_column,
+                            limit=args.limit, out=args.out)
         except ValueError as ex:
+            import traceback
+            traceback.print_exc()
             print(format_coords(scrape_url(url)))
     elif os.path.isfile(url):
         for url, coordinates in scrape_coordinates(url):
